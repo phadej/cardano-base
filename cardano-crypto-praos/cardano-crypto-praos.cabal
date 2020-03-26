@@ -1,0 +1,78 @@
+name:                cardano-crypto-class
+version:             2.0.0
+synopsis:            Type classes abstracting over cryptography primitives for Cardano
+description:         Type classes abstracting over cryptography primitives for Cardano
+license:             Apache-2.0
+license-files:        
+  LICENSE
+  NOTICE
+author:              IOHK
+maintainer:          operations@iohk.io
+copyright:           2019 IOHK
+category:            Currency
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+flag development
+    description: Disable `-Werror`
+    default: False
+    manual: True
+
+library
+  hs-source-dirs:      src
+  exposed-modules:
+                       -- Cardano.Crypto.Praos.VRF
+
+  build-depends:       base
+                     , base16-bytestring
+                     , bytestring
+                     , cardano-binary
+                     , cardano-prelude
+                     , cardano-crypto-class
+                     , cryptonite
+                     , deepseq
+                     , memory
+                     , reflection
+                     , vector
+
+  default-language:    Haskell2010
+
+  ghc-options:         -Weverything
+                       -fno-warn-all-missed-specialisations
+                       -fno-warn-implicit-prelude
+                       -fno-warn-missing-import-lists
+                       -fno-warn-safe
+                       -fno-warn-unsafe
+
+  if (!flag(development))
+    ghc-options:         -Werror
+
+test-suite test-crypto
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:
+
+  build-depends:       base
+                     , bytestring
+                     , cardano-binary
+                     , cardano-crypto-class
+                     , cardano-crypto-praos
+                     , cborg
+                     , cryptonite
+                     , QuickCheck
+                     , tasty
+                     , tasty-quickcheck
+
+  default-language:    Haskell2010
+
+  ghc-options:         -Weverything
+                       -fno-warn-all-missed-specialisations
+                       -fno-warn-implicit-prelude
+                       -fno-warn-missing-import-lists
+                       -fno-warn-safe
+                       -fno-warn-unsafe
+
+  if (!flag(development))
+    ghc-options:         -Werror
