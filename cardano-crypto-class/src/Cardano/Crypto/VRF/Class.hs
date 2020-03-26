@@ -75,6 +75,8 @@ class ( Typeable v
   hashVerKeyVRF :: HashAlgorithm h => VerKeyVRF v -> Hash h (VerKeyVRF v)
   hashVerKeyVRF = hashRaw rawSerialiseVerKeyVRF
 
+  decodeVerKeyVRF :: Decoder s (VerKeyVRF v)
+
 
   --
   -- Core algorithm operations
@@ -112,6 +114,14 @@ class ( Typeable v
   --
 
   genKeyVRF :: Seed -> SignKeyVRF v
+  genKeyPairVRF :: Seed -> (SignKeyVRF v, VerKeyVRF v)
+
+  genKeyVRF =
+    fst . genKeyPairVRF
+
+  genKeyPairVRF = \seed ->
+    let sk = genKeyVRF seed
+    in (sk, deriveVerKeyVRF sk)
 
   -- | The upper bound on the 'Seed' size needed by 'genKeyVRF'
   seedSizeVRF :: proxy v -> Natural
@@ -200,8 +210,8 @@ class ( Typeable v
       , evalVRF
       , verifyVRF
       , maxVRF
-      , genKeyVRF
       , seedSizeVRF
+      , (genKeyVRF                | genKeyPairVRF)
       , (rawSerialiseVerKeyVRF    | encodeVerKeyVRF)
       , (rawSerialiseSignKeyVRF   | encodeSignKeyVRF)
       , (rawSerialiseCertVRF      | encodeCertVRF)
