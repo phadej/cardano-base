@@ -75,9 +75,6 @@ class ( Typeable v
   hashVerKeyVRF :: HashAlgorithm h => VerKeyVRF v -> Hash h (VerKeyVRF v)
   hashVerKeyVRF = hashRaw rawSerialiseVerKeyVRF
 
-  decodeVerKeyVRF :: Decoder s (VerKeyVRF v)
-
-
   --
   -- Core algorithm operations
   --

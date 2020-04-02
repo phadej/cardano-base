@@ -4,6 +4,7 @@ packages:
   binary
   binary/test
   cardano-crypto-class
+  cardano-crypto-praos
   slotting
 
 -- Disable tests in a dependency (which are currently broken)

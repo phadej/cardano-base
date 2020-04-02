@@ -1,7 +1,7 @@
-name:                cardano-crypto-class
+name:                cardano-crypto-praos
 version:             2.0.0
-synopsis:            Type classes abstracting over cryptography primitives for Cardano
-description:         Type classes abstracting over cryptography primitives for Cardano
+synopsis:            Crypto primitives from libsodium
+description:         VRF (and KES, tba) primitives from libsodium.
 license:             Apache-2.0
 license-files:        
   LICENSE
@@ -21,8 +21,7 @@ flag development
 
 library
   hs-source-dirs:      src
-  exposed-modules:
-                       -- Cardano.Crypto.Praos.VRF
+  exposed-modules:     Cardano.Crypto.VRF.Praos
 
   build-depends:       base
                      , base16-bytestring
@@ -44,15 +43,17 @@ library
                        -fno-warn-missing-import-lists
                        -fno-warn-safe
                        -fno-warn-unsafe
+  
+  pkgconfig-depends: libsodium
 
   if (!flag(development))
     ghc-options:         -Werror
 
-test-suite test-crypto
+test-suite test-praos
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Main.hs
-  other-modules:
+  other-modules:       Test.Crypto.VRF.Praos
 
   build-depends:       base
                      , bytestring
@@ -64,6 +65,7 @@ test-suite test-crypto
                      , QuickCheck
                      , tasty
                      , tasty-quickcheck
+                     , tasty-hunit
 
   default-language:    Haskell2010
 
@@ -76,3 +78,5 @@ test-suite test-crypto
 
   if (!flag(development))
     ghc-options:         -Werror
+
+  pkgconfig-depends: libsodium
