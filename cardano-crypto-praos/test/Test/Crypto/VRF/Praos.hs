@@ -30,4 +30,24 @@ tests =
         let actual = crypto_vrf_proofbytes
             expected = 80 :: CSize
         assertEqual "" expected actual
+    , testCase "crypto_vrf_publickeybytes" $ do
+        let actual = crypto_vrf_publickeybytes
+            expected = 32 :: CSize
+        assertEqual "" expected actual
+    , testCase "crypto_vrf_secretkeybytes" $ do
+        let actual = crypto_vrf_secretkeybytes
+            expected = 64 :: CSize
+        assertEqual "" expected actual
+    , testCase "crypto_vrf_seedbytes" $ do
+        let actual = crypto_vrf_seedbytes
+            expected = 32 :: CSize
+        assertEqual "" expected actual
+    , testCase "crypto_vrf_outputbytes" $ do
+        let actual = crypto_vrf_outputbytes
+            expected = 64 :: CSize
+        assertEqual "" expected actual
+
+    , testCase "genSeed" $ do
+        seed <- genSeed
+        assertEqual "" (fromIntegral crypto_vrf_seedbytes) (length $ rawSeed seed)
     ]

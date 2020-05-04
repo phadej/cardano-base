@@ -15,6 +15,18 @@
 module Cardano.Crypto.VRF.Praos
   ( PraosVRF
   , crypto_vrf_proofbytes
+  , crypto_vrf_publickeybytes
+  , crypto_vrf_secretkeybytes
+  , crypto_vrf_seedbytes
+  , crypto_vrf_outputbytes
+  , crypto_vrf_keypair_from_seed
+
+  , keypairFromSeedVRF
+  , genSeed
+  , rawSeed
+  , Seed (..)
+  , SK (..)
+  , PK (..)
   )
 where
 
@@ -32,11 +44,68 @@ where
 -- import Data.Proxy (Proxy (..))
 -- import GHC.Generics (Generic)
 -- import Numeric.Natural (Natural)
+
+import Foreign.ForeignPtr
 import Foreign.C.Types
+import Foreign.Ptr
+import Foreign.Marshal.Alloc
+import Foreign.Storable
+import System.IO.Unsafe (unsafePerformIO)
+import Data.Word
+import Control.Monad (forM)
+
+data SeedValue
+data SKValue
+data PKValue
+
+type SeedPtr = Ptr SeedValue
+type SKPtr = Ptr SKValue
+type PKPtr = Ptr PKValue
+
+newtype Seed = Seed { unSeed :: ForeignPtr SeedValue }
+newtype SK = SK { unSK :: ForeignPtr SKValue }
+newtype PK = PK { unPK :: ForeignPtr PKValue }
 
 foreign import ccall "crypto_vrf_proofbytes" crypto_vrf_proofbytes :: CSize
+foreign import ccall "crypto_vrf_publickeybytes" crypto_vrf_publickeybytes :: CSize
+foreign import ccall "crypto_vrf_secretkeybytes" crypto_vrf_secretkeybytes :: CSize
+foreign import ccall "crypto_vrf_seedbytes" crypto_vrf_seedbytes :: CSize
+foreign import ccall "crypto_vrf_outputbytes" crypto_vrf_outputbytes :: CSize
+
+foreign import ccall "crypto_vrf_keypair_from_seed" crypto_vrf_keypair_from_seed :: PKPtr -> SKPtr -> SeedPtr -> IO ()
+
+foreign import ccall "randombytes_buf" randombytes_buf :: Ptr a -> CSize -> IO ()
+
+genSeed :: IO Seed
+genSeed = do
+  ptr <- mallocBytes (fromIntegral crypto_vrf_seedbytes)
+  randombytes_buf ptr crypto_vrf_seedbytes
+  Seed <$> newForeignPtr finalizerFree ptr
+
+-- TODO: we probably don't want to expose this, because it may leak the seed.
+rawSeed :: Seed -> [Word8]
+rawSeed (Seed fp) = unsafePerformIO $ withForeignPtr fp $ \ptr -> do
+  forM [0..fromIntegral crypto_vrf_seedbytes-1] $ \i -> do
+    peek (ptr `plusPtr` i)
+
+mkPK :: IO PK
+mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_publickeybytes)
+
+mkSK :: IO SK
+mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_secretkeybytes)
+
+keypairFromSeedVRF :: Seed -> (PK, SK)
+keypairFromSeedVRF seed =
+  unsafePerformIO $ withForeignPtr (unSeed seed) $ \sptr -> do
+    pk <- mkPK
+    sk <- mkSK
+    withForeignPtr (unPK pk) $ \pkPtr -> do
+      withForeignPtr (unSK sk) $ \skPtr -> do
+        crypto_vrf_keypair_from_seed pkPtr skPtr sptr
+    return (pk, sk)
 
 data PraosVRF
+
 
 {-
 
