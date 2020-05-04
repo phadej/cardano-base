@@ -19,6 +19,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, assertEqual)
 -- import Test.Tasty.QuickCheck (testProperty)
 import Foreign.C.Types
+import qualified Data.ByteString as BS
 
 --
 -- The list of all tests
@@ -49,5 +50,7 @@ tests =
 
     , testCase "genSeed" $ do
         seed <- genSeed
-        assertEqual "" (fromIntegral crypto_vrf_seedbytes) (length $ rawSeed seed)
+        let expected = fromIntegral crypto_vrf_seedbytes :: Int
+        actual <- BS.length <$> unsafeRawSeed seed
+        assertEqual "" expected actual
     ]

@@ -10,10 +10,12 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- | Mock implementations of verifiable random functions.
 module Cardano.Crypto.VRF.Praos
   ( PraosVRF
+
   , crypto_vrf_proofbytes
   , crypto_vrf_publickeybytes
   , crypto_vrf_secretkeybytes
@@ -21,9 +23,12 @@ module Cardano.Crypto.VRF.Praos
   , crypto_vrf_outputbytes
   , crypto_vrf_keypair_from_seed
 
-  , keypairFromSeedVRF
+  , keypairFromSeed
   , genSeed
-  , rawSeed
+  , skToPK
+  , skToSeed
+  , prove
+  , unsafeRawSeed
   , Seed (..)
   , SK (..)
   , PK (..)
@@ -49,22 +54,40 @@ import Foreign.ForeignPtr
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
-import Foreign.Storable
+-- import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
-import Data.Word
-import Control.Monad (forM)
+import Control.Monad (void)
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+
+-- * Value types.
+-- These are all transparent to the Haskell side of things, all we ever do
+-- with these is pass pointers to them around. We don't want to know anything
+-- about them, hence, we make them uninhabited (isomorphic with
+-- 'Data.Void.Void').
 
 data SeedValue
 data SKValue
 data PKValue
+data ProofValue
+
+-- * Type aliases for raw pointers
+-- These will not leave this module, they are only here for our convenience,
+-- so we can afford to not newtype them.
 
 type SeedPtr = Ptr SeedValue
 type SKPtr = Ptr SKValue
 type PKPtr = Ptr PKValue
+type ProofPtr = Ptr ProofValue
 
+-- * Exposed types
 newtype Seed = Seed { unSeed :: ForeignPtr SeedValue }
 newtype SK = SK { unSK :: ForeignPtr SKValue }
 newtype PK = PK { unPK :: ForeignPtr PKValue }
+newtype Proof = Proof { unProof :: ForeignPtr ProofValue }
+
+-- * Low-level API
+-- Direct wrappers around libsodium functions
 
 foreign import ccall "crypto_vrf_proofbytes" crypto_vrf_proofbytes :: CSize
 foreign import ccall "crypto_vrf_publickeybytes" crypto_vrf_publickeybytes :: CSize
@@ -72,21 +95,28 @@ foreign import ccall "crypto_vrf_secretkeybytes" crypto_vrf_secretkeybytes :: CS
 foreign import ccall "crypto_vrf_seedbytes" crypto_vrf_seedbytes :: CSize
 foreign import ccall "crypto_vrf_outputbytes" crypto_vrf_outputbytes :: CSize
 
-foreign import ccall "crypto_vrf_keypair_from_seed" crypto_vrf_keypair_from_seed :: PKPtr -> SKPtr -> SeedPtr -> IO ()
+foreign import ccall "crypto_vrf_keypair_from_seed" crypto_vrf_keypair_from_seed :: PKPtr -> SKPtr -> SeedPtr -> IO CInt
+foreign import ccall "crypto_vrf_sk_to_pk" crypto_vrf_sk_to_pk :: PKPtr -> SKPtr -> IO CInt
+foreign import ccall "crypto_vrf_sk_to_seed" crypto_vrf_sk_to_seed :: SeedPtr -> SKPtr -> IO CInt
+foreign import ccall "crypto_vrf_prove" crypto_vrf_prove :: ProofPtr -> SKPtr -> Ptr CChar -> CULLong -> IO CInt
 
 foreign import ccall "randombytes_buf" randombytes_buf :: Ptr a -> CSize -> IO ()
 
-genSeed :: IO Seed
-genSeed = do
+mkSeed :: IO Seed
+mkSeed = do
   ptr <- mallocBytes (fromIntegral crypto_vrf_seedbytes)
-  randombytes_buf ptr crypto_vrf_seedbytes
   Seed <$> newForeignPtr finalizerFree ptr
 
--- TODO: we probably don't want to expose this, because it may leak the seed.
-rawSeed :: Seed -> [Word8]
-rawSeed (Seed fp) = unsafePerformIO $ withForeignPtr fp $ \ptr -> do
-  forM [0..fromIntegral crypto_vrf_seedbytes-1] $ \i -> do
-    peek (ptr `plusPtr` i)
+genSeed :: IO Seed
+genSeed = do
+  seed <- mkSeed
+  withForeignPtr (unSeed seed) $ \ptr ->
+    randombytes_buf ptr crypto_vrf_seedbytes
+  return seed
+
+unsafeRawSeed :: Seed -> IO ByteString
+unsafeRawSeed (Seed fp) = withForeignPtr fp $ \ptr ->
+  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_seedbytes)
 
 mkPK :: IO PK
 mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_publickeybytes)
@@ -94,15 +124,44 @@ mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypt
 mkSK :: IO SK
 mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_secretkeybytes)
 
-keypairFromSeedVRF :: Seed -> (PK, SK)
-keypairFromSeedVRF seed =
+mkProof :: IO Proof
+mkProof = fmap Proof $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_proofbytes)
+
+keypairFromSeed :: Seed -> (PK, SK)
+keypairFromSeed seed =
   unsafePerformIO $ withForeignPtr (unSeed seed) $ \sptr -> do
     pk <- mkPK
     sk <- mkSK
     withForeignPtr (unPK pk) $ \pkPtr -> do
       withForeignPtr (unSK sk) $ \skPtr -> do
-        crypto_vrf_keypair_from_seed pkPtr skPtr sptr
+        void $ crypto_vrf_keypair_from_seed pkPtr skPtr sptr
     return (pk, sk)
+
+skToPK :: SK -> PK
+skToPK sk =
+  unsafePerformIO $ withForeignPtr (unSK sk) $ \skPtr -> do
+    pk <- mkPK
+    withForeignPtr (unPK pk) $ \pkPtr -> do
+      void $ crypto_vrf_sk_to_pk pkPtr skPtr
+    return pk
+
+skToSeed :: SK -> Seed
+skToSeed sk =
+  unsafePerformIO $ withForeignPtr (unSK sk) $ \skPtr -> do
+    seed <- mkSeed
+    _ <- withForeignPtr (unSeed seed) $ \seedPtr -> do
+      crypto_vrf_sk_to_seed seedPtr skPtr
+    return seed
+
+prove :: SK -> ByteString -> Maybe Proof
+prove sk msg =
+  unsafePerformIO $ withForeignPtr (unSK sk) $ \skPtr -> do
+    proof <- mkProof
+    BS.useAsCStringLen msg $ \(m, mlen) -> do
+      withForeignPtr (unProof proof) $ \proofPtr -> do
+        crypto_vrf_prove proofPtr skPtr m (fromIntegral mlen) >>= \case
+          0 -> return $ Just proof
+          _ -> return Nothing
 
 data PraosVRF
 
