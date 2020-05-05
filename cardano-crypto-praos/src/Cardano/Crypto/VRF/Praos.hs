@@ -21,14 +21,15 @@ module Cardano.Crypto.VRF.Praos
   , crypto_vrf_secretkeybytes
   , crypto_vrf_seedbytes
   , crypto_vrf_outputbytes
-  , crypto_vrf_keypair_from_seed
 
   , keypairFromSeed
   , genSeed
   , skToPK
   , skToSeed
   , prove
+  , verify
   , unsafeRawSeed
+  , outputToByteString
   , Seed (..)
   , SK (..)
   , PK (..)
@@ -70,6 +71,7 @@ data SeedValue
 data SKValue
 data PKValue
 data ProofValue
+data OutputValue
 
 -- * Type aliases for raw pointers
 -- These will not leave this module, they are only here for our convenience,
@@ -79,12 +81,14 @@ type SeedPtr = Ptr SeedValue
 type SKPtr = Ptr SKValue
 type PKPtr = Ptr PKValue
 type ProofPtr = Ptr ProofValue
+type OutputPtr = Ptr OutputValue
 
 -- * Exposed types
 newtype Seed = Seed { unSeed :: ForeignPtr SeedValue }
 newtype SK = SK { unSK :: ForeignPtr SKValue }
 newtype PK = PK { unPK :: ForeignPtr PKValue }
 newtype Proof = Proof { unProof :: ForeignPtr ProofValue }
+newtype Output = Output { unOutput :: ForeignPtr OutputValue }
 
 -- * Low-level API
 -- Direct wrappers around libsodium functions
@@ -99,6 +103,7 @@ foreign import ccall "crypto_vrf_keypair_from_seed" crypto_vrf_keypair_from_seed
 foreign import ccall "crypto_vrf_sk_to_pk" crypto_vrf_sk_to_pk :: PKPtr -> SKPtr -> IO CInt
 foreign import ccall "crypto_vrf_sk_to_seed" crypto_vrf_sk_to_seed :: SeedPtr -> SKPtr -> IO CInt
 foreign import ccall "crypto_vrf_prove" crypto_vrf_prove :: ProofPtr -> SKPtr -> Ptr CChar -> CULLong -> IO CInt
+foreign import ccall "crypto_vrf_verify" crypto_vrf_verify :: OutputPtr -> PKPtr -> ProofPtr -> Ptr CChar -> CULLong -> IO CInt
 
 foreign import ccall "randombytes_buf" randombytes_buf :: Ptr a -> CSize -> IO ()
 
@@ -118,6 +123,10 @@ unsafeRawSeed :: Seed -> IO ByteString
 unsafeRawSeed (Seed fp) = withForeignPtr fp $ \ptr ->
   BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_seedbytes)
 
+outputToByteString :: Output -> IO ByteString
+outputToByteString (Output op) = withForeignPtr op $ \ptr ->
+  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_outputbytes)
+
 mkPK :: IO PK
 mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_publickeybytes)
 
@@ -126,6 +135,9 @@ mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypt
 
 mkProof :: IO Proof
 mkProof = fmap Proof $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_proofbytes)
+
+mkOutput :: IO Output
+mkOutput = fmap Output $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_outputbytes)
 
 keypairFromSeed :: Seed -> (PK, SK)
 keypairFromSeed seed =
@@ -155,13 +167,26 @@ skToSeed sk =
 
 prove :: SK -> ByteString -> Maybe Proof
 prove sk msg =
-  unsafePerformIO $ withForeignPtr (unSK sk) $ \skPtr -> do
-    proof <- mkProof
-    BS.useAsCStringLen msg $ \(m, mlen) -> do
+  unsafePerformIO $
+    withForeignPtr (unSK sk) $ \skPtr -> do
+      proof <- mkProof
+      BS.useAsCStringLen msg $ \(m, mlen) -> do
+        withForeignPtr (unProof proof) $ \proofPtr -> do
+          crypto_vrf_prove proofPtr skPtr m (fromIntegral mlen) >>= \case
+            0 -> return $ Just proof
+            _ -> return Nothing
+
+verify :: PK -> Proof -> ByteString -> Maybe Output
+verify pk proof msg =
+  unsafePerformIO $
+    withForeignPtr (unPK pk) $ \pkPtr -> do
       withForeignPtr (unProof proof) $ \proofPtr -> do
-        crypto_vrf_prove proofPtr skPtr m (fromIntegral mlen) >>= \case
-          0 -> return $ Just proof
-          _ -> return Nothing
+        output <- mkOutput
+        BS.useAsCStringLen msg $ \(m, mlen) -> do
+          withForeignPtr (unOutput output) $ \outputPtr -> do
+            crypto_vrf_verify outputPtr pkPtr proofPtr m (fromIntegral mlen) >>= \case
+              0 -> return $ Just output
+              _ -> return Nothing
 
 data PraosVRF
 

@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Test.Crypto.VRF.Praos
   ( tests
   )
@@ -16,7 +17,7 @@ import Cardano.Crypto.VRF.Praos
 -- import Test.Crypto.Util (Seed, prop_cbor, withSeed)
 -- import Test.QuickCheck ((==>), Property, counterexample)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (testCase, assertEqual)
+import Test.Tasty.HUnit (testCase, assertEqual, assertBool)
 -- import Test.Tasty.QuickCheck (testProperty)
 import Foreign.C.Types
 import qualified Data.ByteString as BS
@@ -53,4 +54,23 @@ tests =
         let expected = fromIntegral crypto_vrf_seedbytes :: Int
         actual <- BS.length <$> unsafeRawSeed seed
         assertEqual "" expected actual
+
+    , testCase "VRF round-trip" $ do
+        seed <- genSeed
+        let (pk, sk) = keypairFromSeed seed
+        let msg = "Hello, world!" :: BS.ByteString
+            mproof = prove sk msg
+        case mproof of
+          Nothing ->
+            assertBool "Proof failure" False
+          Just proof -> do
+            let moutput = verify pk proof msg
+            case moutput of
+              Nothing ->
+                assertBool "Verification failure" False
+              Just output -> do
+                hash <- outputToByteString output
+                print hash
+                assertEqual "Hash length" 64 (BS.length hash)
+                pure ()
     ]
