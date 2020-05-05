@@ -16,23 +16,42 @@
 module Cardano.Crypto.VRF.Praos
   ( PraosVRF
 
+  -- * Low-level size specifiers
+  --
+  -- Sizes of various value types involved in the VRF calculations. Users of
+  -- this module will not need these, we are only exporting them for unit
+  -- testing purposes.
   , crypto_vrf_proofbytes
   , crypto_vrf_publickeybytes
   , crypto_vrf_secretkeybytes
   , crypto_vrf_seedbytes
   , crypto_vrf_outputbytes
 
-  , keypairFromSeed
+  -- * Value types
+  --
+  -- These types are all implemented as transparent references. The actual
+  -- values are kept entirely in C memory, allocated when a value is created,
+  -- and freed when the value's finalizer runs.
+  , Seed
+  , SK
+  , PK
+  , Proof
+  , Output
+
+
+  -- * Seed and key generation
   , genSeed
-  , skToPK
-  , skToSeed
-  , prove
-  , verify
+  , keypairFromSeed
+
+  -- * Conversions
   , unsafeRawSeed
   , outputToByteString
-  , Seed (..)
-  , SK (..)
-  , PK (..)
+  , skToPK
+  , skToSeed
+
+  -- * Core VRF operations
+  , prove
+  , verify
   )
 where
 
@@ -61,11 +80,14 @@ import Control.Monad (void)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 
--- * Value types.
+-- Value types.
+--
 -- These are all transparent to the Haskell side of things, all we ever do
 -- with these is pass pointers to them around. We don't want to know anything
 -- about them, hence, we make them uninhabited (isomorphic with
--- 'Data.Void.Void').
+-- 'Data.Void.Void'). The reason we have them at all, rather than duplicating
+-- C's void pointers, is because we want to distinguish them at the type
+-- level.
 
 data SeedValue
 data SKValue
@@ -73,7 +95,8 @@ data PKValue
 data ProofValue
 data OutputValue
 
--- * Type aliases for raw pointers
+-- Type aliases for raw pointers
+--
 -- These will not leave this module, they are only here for our convenience,
 -- so we can afford to not newtype them.
 
@@ -83,16 +106,20 @@ type PKPtr = Ptr PKValue
 type ProofPtr = Ptr ProofValue
 type OutputPtr = Ptr OutputValue
 
--- * Exposed types
+-- The exported types.
+--
+-- These are wrappers around 'ForeignPtr's; we don't export the constructors,
+-- so callers have to go through our blessed API to create any of them. This
+-- way we can make sure that we always allocate the correct sizes, and attach
+-- finalizers that automatically free the memory for us.
 newtype Seed = Seed { unSeed :: ForeignPtr SeedValue }
 newtype SK = SK { unSK :: ForeignPtr SKValue }
 newtype PK = PK { unPK :: ForeignPtr PKValue }
 newtype Proof = Proof { unProof :: ForeignPtr ProofValue }
 newtype Output = Output { unOutput :: ForeignPtr OutputValue }
 
--- * Low-level API
--- Direct wrappers around libsodium functions
-
+-- Raw low-level FFI bindings.
+--
 foreign import ccall "crypto_vrf_proofbytes" crypto_vrf_proofbytes :: CSize
 foreign import ccall "crypto_vrf_publickeybytes" crypto_vrf_publickeybytes :: CSize
 foreign import ccall "crypto_vrf_secretkeybytes" crypto_vrf_secretkeybytes :: CSize
@@ -107,11 +134,14 @@ foreign import ccall "crypto_vrf_verify" crypto_vrf_verify :: OutputPtr -> PKPtr
 
 foreign import ccall "randombytes_buf" randombytes_buf :: Ptr a -> CSize -> IO ()
 
+-- | Allocate a 'Seed' and attach a finalizer. The allocated memory will not be initialized.
 mkSeed :: IO Seed
 mkSeed = do
   ptr <- mallocBytes (fromIntegral crypto_vrf_seedbytes)
   Seed <$> newForeignPtr finalizerFree ptr
 
+-- | Generate a random seed.
+-- Uses 'randombytes_buf' to create random data.
 genSeed :: IO Seed
 genSeed = do
   seed <- mkSeed
@@ -119,26 +149,39 @@ genSeed = do
     randombytes_buf ptr crypto_vrf_seedbytes
   return seed
 
+-- | Convert an opaque 'Seed' into a 'ByteString' that we can inspect. Note
+-- that this will leak the seed into unprotected memory.
 unsafeRawSeed :: Seed -> IO ByteString
 unsafeRawSeed (Seed fp) = withForeignPtr fp $ \ptr ->
   BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_seedbytes)
 
+-- | Convert a proof verification output hash into a 'ByteString' that we can
+-- inspect.
 outputToByteString :: Output -> IO ByteString
 outputToByteString (Output op) = withForeignPtr op $ \ptr ->
   BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_outputbytes)
 
+-- | Allocate a Public Key and attach a finalizer. The allocated memory will
+-- not be initialized.
 mkPK :: IO PK
 mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_publickeybytes)
 
+-- | Allocate a Secret Key and attach a finalizer. The allocated memory will
+-- not be initialized.
 mkSK :: IO SK
 mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_secretkeybytes)
 
+-- | Allocate a Proof and attach a finalizer. The allocated memory will
+-- not be initialized.
 mkProof :: IO Proof
 mkProof = fmap Proof $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_proofbytes)
 
+-- | Allocate an Output and attach a finalizer. The allocated memory will
+-- not be initialized.
 mkOutput :: IO Output
 mkOutput = fmap Output $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_outputbytes)
 
+-- | Derive a Public/Secret key pair from a seed.
 keypairFromSeed :: Seed -> (PK, SK)
 keypairFromSeed seed =
   unsafePerformIO $ withForeignPtr (unSeed seed) $ \sptr -> do
@@ -149,6 +192,7 @@ keypairFromSeed seed =
         void $ crypto_vrf_keypair_from_seed pkPtr skPtr sptr
     return (pk, sk)
 
+-- | Derive a Public Key from a Secret Key.
 skToPK :: SK -> PK
 skToPK sk =
   unsafePerformIO $ withForeignPtr (unSK sk) $ \skPtr -> do
@@ -157,6 +201,7 @@ skToPK sk =
       void $ crypto_vrf_sk_to_pk pkPtr skPtr
     return pk
 
+-- | Get the seed used to generate a given Secret Key
 skToSeed :: SK -> Seed
 skToSeed sk =
   unsafePerformIO $ withForeignPtr (unSK sk) $ \skPtr -> do
@@ -165,6 +210,9 @@ skToSeed sk =
       crypto_vrf_sk_to_seed seedPtr skPtr
     return seed
 
+-- | Construct a proof from a Secret Key and a message.
+-- Returns 'Just' the proof on success, 'Nothing' if the secrect key could not
+-- be decoded.
 prove :: SK -> ByteString -> Maybe Proof
 prove sk msg =
   unsafePerformIO $
@@ -176,6 +224,12 @@ prove sk msg =
             0 -> return $ Just proof
             _ -> return Nothing
 
+-- | Verify a VRF proof and validate the Public Key. Returns 'Just' a hash of
+-- the verification result on success, 'Nothing' if the verification did not
+-- succeed.
+--
+-- For a given public key and message, there are many possible proofs but only
+-- one possible output hash.
 verify :: PK -> Proof -> ByteString -> Maybe Output
 verify pk proof msg =
   unsafePerformIO $
