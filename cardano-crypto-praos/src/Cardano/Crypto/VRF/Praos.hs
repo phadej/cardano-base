@@ -112,10 +112,23 @@ type OutputPtr = Ptr OutputValue
 -- so callers have to go through our blessed API to create any of them. This
 -- way we can make sure that we always allocate the correct sizes, and attach
 -- finalizers that automatically free the memory for us.
+
+-- | A random seed, used to derive a public/secret key pair.
 newtype Seed = Seed { unSeed :: ForeignPtr SeedValue }
+
+-- | Secret key. In this implementation, the secret key is actually a 64-byte
+-- value that contains both the 32-byte secret key and the corresponding
+-- 32-byte public key.
 newtype SK = SK { unSK :: ForeignPtr SKValue }
+
+-- | Public key.
 newtype PK = PK { unPK :: ForeignPtr PKValue }
+
+-- | A proof, as constructed by the 'prove' function.
 newtype Proof = Proof { unProof :: ForeignPtr ProofValue }
+
+-- | Hashed output of a proof verification, as returned by the 'verify'
+-- function.
 newtype Output = Output { unOutput :: ForeignPtr OutputValue }
 
 -- Raw low-level FFI bindings.
@@ -244,60 +257,7 @@ verify pk proof msg =
 
 data PraosVRF
 
-
 {-
-
-type H = MD5
-
-curve :: C.Curve
-curve = C.getCurveByName C.SEC_t113r1
-
-q :: Integer
-q = C.ecc_n $ C.common_curve curve
-
-newtype Point = Point C.Point
-  deriving (Eq, Generic)
-  deriving NoUnexpectedThunks via UseIsNormalForm C.Point
-
-instance Show Point where
-  show (Point p) = show p
-
-instance ToCBOR Point where
-  toCBOR (Point p) = toCBOR $ pointToMaybe p
-
-instance FromCBOR Point where
-  fromCBOR = Point . pointFromMaybe <$> fromCBOR
-
-instance Semigroup Point where
-  Point p <> Point r = Point $ C.pointAdd curve p r
-
-instance Monoid Point where
-  mempty = Point C.PointO
-  mappend = (<>)
-
-pointToMaybe :: C.Point -> Maybe (Integer, Integer)
-pointToMaybe C.PointO = Nothing
-pointToMaybe (C.Point x y) = Just (x, y)
-
-pointFromMaybe :: Maybe (Integer, Integer) -> C.Point
-pointFromMaybe Nothing = C.PointO
-pointFromMaybe (Just (x, y)) = C.Point x y
-
-pow :: Integer -> Point
-pow = Point . C.pointBaseMul curve
-
-pow' :: Point -> Integer -> Point
-pow' (Point p) n = Point $ C.pointMul curve n p
-
-h :: Encoding -> Natural
-h = fromHash . hashWithSerialiser @H id
-
-h' :: Encoding -> Integer -> Point
-h' enc l = pow $ mod (l * (fromIntegral $ h enc)) q
-
-getR :: MonadRandom m => m Integer
-getR = generateBetween 0 (q - 1)
-
 instance VRFAlgorithm SimpleVRF where
 
   type Signable SimpleVRF = ToCBOR
