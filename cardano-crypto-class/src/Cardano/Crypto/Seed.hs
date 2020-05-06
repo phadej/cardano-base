@@ -12,6 +12,7 @@ module Cardano.Crypto.Seed
   , splitSeed
     -- * Using seeds
   , getBytesFromSeed
+  , getBytesFromSeedT
   , runMonadRandomWithSeed
   , SeedBytesExhausted(..)
   ) where
@@ -56,6 +57,15 @@ getBytesFromSeed :: Int -> Seed -> Maybe (ByteString, Seed)
 getBytesFromSeed n (Seed s)
   | BS.length b == n = Just (b, Seed s')
   | otherwise        = Nothing
+  where
+    (b, s') = BS.splitAt n s
+
+-- | A flavor of 'getBytesFromSeed' that throws 'SeedBytesExhausted' instead of
+-- returning 'Nothing'.
+getBytesFromSeedT :: Int -> Seed -> (ByteString, Seed)
+getBytesFromSeedT n (Seed s)
+  | BS.length b == n = (b, Seed s')
+  | otherwise        = throw (SeedBytesExhausted $ BS.length b)
   where
     (b, s') = BS.splitAt n s
 
