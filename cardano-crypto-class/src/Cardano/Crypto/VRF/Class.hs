@@ -93,16 +93,17 @@ class ( Typeable v
     => ContextVRF v
     -> a
     -> SignKeyVRF v
-    -> m (Natural, CertVRF v)
+    -> m (ByteString, CertVRF v)
 
   verifyVRF
     :: (HasCallStack, Signable v a)
     => ContextVRF v
     -> VerKeyVRF v
     -> a
-    -> (Natural, CertVRF v)
+    -> (ByteString, CertVRF v)
     -> Bool
 
+  -- | The largest possible value (inclusive) for ...? (TODO: fix me!)
   maxVRF :: proxy v -> Natural
 
 
@@ -120,7 +121,7 @@ class ( Typeable v
     let sk = genKeyVRF seed
     in (sk, deriveVerKeyVRF sk)
 
-  -- | The upper bound on the 'Seed' size needed by 'genKeyVRF'
+  -- | The upper bound on the 'Seed' size needed by 'genKeyVRF', in bytes.
   seedSizeVRF :: proxy v -> Natural
 
 
@@ -220,7 +221,7 @@ class ( Typeable v
 
 data CertifiedVRF v a
   = CertifiedVRF
-      { certifiedNatural :: Natural
+      { certifiedNatural :: ByteString
       , certifiedProof :: CertVRF v
       }
   deriving Generic

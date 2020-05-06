@@ -35,6 +35,11 @@ import Crypto.Random (MonadRandom (..))
 import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
+import Data.Word
+import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
+-- import Data.Bits (shiftR)
+import Data.Bits (shiftL)
 
 data SimpleVRF
 
@@ -80,14 +85,35 @@ pow = Point . C.pointBaseMul curve
 pow' :: Point -> Integer -> Point
 pow' (Point p) n = Point $ C.pointMul curve n p
 
-h :: Encoding -> Natural
-h = fromHash . hashWithSerialiser @H id
+h :: Encoding -> ByteString
+h = getHash . hashWithSerialiser @H id
 
 h' :: Encoding -> Integer -> Point
-h' enc l = pow $ mod (l * (fromIntegral $ h enc)) q
+h' enc l = pow $ mod (l * (fromIntegral . bsToNat $ h enc)) q
 
 getR :: MonadRandom m => m Integer
 getR = generateBetween 0 (q - 1)
+
+-- natToBS :: Natural -> ByteString
+-- natToBS 0 = BS.pack [0]
+-- natToBS n = BS.pack $ natToBytesBE n
+-- 
+-- natToBytesBE :: Natural -> [Word8]
+-- natToBytesBE = reverse . natToBytesLE
+-- 
+-- natToBytesLE :: Natural -> [Word8]
+-- natToBytesLE 0 = []
+-- natToBytesLE n = fromIntegral n : natToBytesLE (n `shiftR` 8)
+
+bsToNat :: ByteString -> Natural
+bsToNat = bytesToNatBE . BS.unpack
+
+bytesToNatBE :: [Word8] -> Natural
+bytesToNatBE = bytesToNatLE . reverse
+
+bytesToNatLE :: [Word8] -> Natural
+bytesToNatLE [] = 0
+bytesToNatLE (n:ns) = fromIntegral n + bytesToNatLE ns `shiftL` 8
 
 instance VRFAlgorithm SimpleVRF where
 
@@ -134,8 +160,8 @@ instance VRFAlgorithm SimpleVRF where
         VerKeySimpleVRF v = deriveVerKeyVRF sk
     r <- getR
     let c = h $ toCBOR a <> toCBOR v <> toCBOR (pow r) <> toCBOR (h' (toCBOR a) r)
-        s = mod (r + k * fromIntegral c) q
-    return (y, CertSimpleVRF u c s)
+        s = mod (r + k * fromIntegral (bsToNat c)) q
+    return (y, CertSimpleVRF u (bsToNat c) s)
 
   verifyVRF () (VerKeySimpleVRF v) a (y, cert) =
     let u = certU cert
@@ -148,7 +174,7 @@ instance VRFAlgorithm SimpleVRF where
             toCBOR v <>
             toCBOR (pow s <> pow' v c') <>
             toCBOR (h' (toCBOR a) s <> pow' u c')
-    in b1 && c == rhs
+    in b1 && c == bsToNat rhs
 
   maxVRF _ = 2 ^ (8 * byteCount (Proxy :: Proxy H)) - 1
 

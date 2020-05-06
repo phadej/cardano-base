@@ -20,7 +20,6 @@ import Cardano.Crypto.VRF.Class
 import Cardano.Prelude (NoUnexpectedThunks)
 import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
-import Numeric.Natural (Natural)
 
 data MockVRF
 
@@ -80,7 +79,7 @@ instance VRFAlgorithm MockVRF where
   decodeCertVRF    = fromCBOR
 
 
-evalVRF' :: ToCBOR a => a -> SignKeyVRF MockVRF -> (Natural, CertVRF MockVRF)
+evalVRF' :: ToCBOR a => a -> SignKeyVRF MockVRF -> (ByteString, CertVRF MockVRF)
 evalVRF' a sk@(SignKeyMockVRF n) =
-  let y = fromHash $ hashWithSerialiser @MD5 id $ toCBOR a <> toCBOR sk
+  let y = getHash $ hashWithSerialiser @MD5 id $ toCBOR a <> toCBOR sk
   in (y, CertMockVRF n)

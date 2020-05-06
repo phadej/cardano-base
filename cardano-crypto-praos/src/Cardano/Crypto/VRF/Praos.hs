@@ -14,7 +14,9 @@
 
 -- | Mock implementations of verifiable random functions.
 module Cardano.Crypto.VRF.Praos
-  ( PraosVRF
+  (
+  -- * VRFAlgorithm API
+    PraosVRF
 
   -- * Low-level size specifiers
   --
@@ -45,7 +47,9 @@ module Cardano.Crypto.VRF.Praos
 
   -- * Conversions
   , unsafeRawSeed
-  , outputToByteString
+  , outputBytes
+  , proofBytes
+  , pkBytes
   , skToPK
   , skToSeed
 
@@ -55,30 +59,29 @@ module Cardano.Crypto.VRF.Praos
   )
 where
 
--- import Cardano.Binary
---   ( Encoding
---   , FromCBOR (..)
---   , ToCBOR (..)
---   , encodeListLen
---   , enforceSize
---   )
+import Cardano.Binary
+  ( FromCBOR (..)
+  , ToCBOR (..)
+  , serialize'
+  )
 
--- import Cardano.Crypto.VRF.Class
--- import Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm(..))
--- import Crypto.Random (MonadRandom (..))
--- import Data.Proxy (Proxy (..))
--- import GHC.Generics (Generic)
--- import Numeric.Natural (Natural)
+import Cardano.Crypto.VRF.Class
+import Cardano.Prelude (NoUnexpectedThunks, UseIsNormalForm(..))
+import Cardano.Crypto.Seed (getBytesFromSeedT)
+import GHC.Generics (Generic)
+import Data.Coerce (coerce)
 
 import Foreign.ForeignPtr
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+import Foreign.Marshal.Utils
 -- import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
 import Control.Monad (void)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import Data.Maybe (isJust)
 
 -- Value types.
 --
@@ -120,16 +123,20 @@ newtype Seed = Seed { unSeed :: ForeignPtr SeedValue }
 -- value that contains both the 32-byte secret key and the corresponding
 -- 32-byte public key.
 newtype SK = SK { unSK :: ForeignPtr SKValue }
+  deriving (Generic)
 
 -- | Public key.
 newtype PK = PK { unPK :: ForeignPtr PKValue }
+  deriving (Generic)
 
 -- | A proof, as constructed by the 'prove' function.
 newtype Proof = Proof { unProof :: ForeignPtr ProofValue }
+  deriving (Generic)
 
 -- | Hashed output of a proof verification, as returned by the 'verify'
 -- function.
 newtype Output = Output { unOutput :: ForeignPtr OutputValue }
+  deriving (Generic)
 
 -- Raw low-level FFI bindings.
 --
@@ -162,6 +169,16 @@ genSeed = do
     randombytes_buf ptr crypto_vrf_seedbytes
   return seed
 
+seedFromBytes :: ByteString -> Seed
+seedFromBytes bs | BS.length bs < fromIntegral crypto_vrf_seedbytes =
+  error "Not enough bytes for seed"
+seedFromBytes bs = unsafePerformIO $ do
+  seed <- mkSeed
+  withForeignPtr (unSeed seed) $ \ptr ->
+    BS.useAsCString bs $ \cstr ->
+      copyBytes (castPtr ptr) cstr (fromIntegral crypto_vrf_seedbytes)
+  return seed
+
 -- | Convert an opaque 'Seed' into a 'ByteString' that we can inspect. Note
 -- that this will leak the seed into unprotected memory.
 unsafeRawSeed :: Seed -> IO ByteString
@@ -170,9 +187,62 @@ unsafeRawSeed (Seed fp) = withForeignPtr fp $ \ptr ->
 
 -- | Convert a proof verification output hash into a 'ByteString' that we can
 -- inspect.
-outputToByteString :: Output -> IO ByteString
-outputToByteString (Output op) = withForeignPtr op $ \ptr ->
+outputBytes :: Output -> ByteString
+outputBytes (Output op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
   BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_outputbytes)
+
+-- | Convert a proof into a 'ByteString' that we can inspect.
+proofBytes :: Proof -> ByteString
+proofBytes (Proof op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
+  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_proofbytes)
+
+-- | Convert a public key into a 'ByteString' that we can inspect.
+pkBytes :: PK -> ByteString
+pkBytes (PK op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
+  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_publickeybytes)
+
+-- | Convert a public key into a 'ByteString' that we can inspect.
+skBytes :: SK -> ByteString
+skBytes (SK op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
+  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_secretkeybytes)
+
+instance Show Proof where
+  show = show . proofBytes
+
+instance Eq Proof where
+  a == b = proofBytes a == proofBytes b
+
+instance ToCBOR Proof where
+  toCBOR = toCBOR . proofBytes
+
+instance FromCBOR Proof where
+  fromCBOR = proofFromBytes <$> fromCBOR
+
+
+instance Show SK where
+  show = show . skBytes
+
+instance Eq SK where
+  a == b = skBytes a == skBytes b
+
+instance ToCBOR SK where
+  toCBOR = toCBOR . skBytes
+
+instance FromCBOR SK where
+  fromCBOR = skFromBytes <$> fromCBOR
+
+
+instance Show PK where
+  show = show . pkBytes
+
+instance Eq PK where
+  a == b = pkBytes a == pkBytes b
+
+instance ToCBOR PK where
+  toCBOR = toCBOR . pkBytes
+
+instance FromCBOR PK where
+  fromCBOR = pkFromBytes <$> fromCBOR
 
 -- | Allocate a Public Key and attach a finalizer. The allocated memory will
 -- not be initialized.
@@ -188,6 +258,42 @@ mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypt
 -- not be initialized.
 mkProof :: IO Proof
 mkProof = fmap Proof $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_proofbytes)
+
+proofFromBytes :: ByteString -> Proof
+proofFromBytes bs
+  | BS.length bs /= fromIntegral crypto_vrf_proofbytes
+  = error "Invalid proof length"
+  | otherwise
+  = unsafePerformIO $ do
+      proof <- mkProof
+      withForeignPtr (unProof proof) $ \ptr ->
+        BS.useAsCString bs $ \cstr -> do
+          copyBytes cstr (castPtr ptr) (fromIntegral crypto_vrf_proofbytes)
+      return proof
+
+skFromBytes :: ByteString -> SK
+skFromBytes bs
+  | BS.length bs /= fromIntegral crypto_vrf_secretkeybytes
+  = error "Invalid sk length"
+  | otherwise
+  = unsafePerformIO $ do
+      sk <- mkSK
+      withForeignPtr (unSK sk) $ \ptr ->
+        BS.useAsCString bs $ \cstr -> do
+          copyBytes cstr (castPtr ptr) (fromIntegral crypto_vrf_secretkeybytes)
+      return sk
+
+pkFromBytes :: ByteString -> PK
+pkFromBytes bs
+  | BS.length bs /= fromIntegral crypto_vrf_publickeybytes
+  = error "Invalid pk length"
+  | otherwise
+  = unsafePerformIO $ do
+      pk <- mkPK
+      withForeignPtr (unPK pk) $ \ptr ->
+        BS.useAsCString bs $ \cstr -> do
+          copyBytes cstr (castPtr ptr) (fromIntegral crypto_vrf_publickeybytes)
+      return pk
 
 -- | Allocate an Output and attach a finalizer. The allocated memory will
 -- not be initialized.
@@ -256,6 +362,53 @@ verify pk proof msg =
               _ -> return Nothing
 
 data PraosVRF
+
+instance VRFAlgorithm PraosVRF where
+  newtype VerKeyVRF PraosVRF = VerKeyPraosVRF PK
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (ToCBOR, FromCBOR)
+    deriving NoUnexpectedThunks via UseIsNormalForm (ForeignPtr PKValue)
+
+  newtype SignKeyVRF PraosVRF = SignKeyPraosVRF SK
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (ToCBOR, FromCBOR)
+    deriving NoUnexpectedThunks via UseIsNormalForm (ForeignPtr SKValue)
+
+  newtype CertVRF PraosVRF = CertPraosVRF Proof
+    deriving stock   (Show, Eq, Generic)
+    deriving newtype (ToCBOR, FromCBOR)
+    deriving NoUnexpectedThunks via UseIsNormalForm (ForeignPtr ProofValue)
+
+  type Signable PraosVRF = ToCBOR
+
+  algorithmNameVRF = const "PraosVRF"
+
+  deriveVerKeyVRF = coerce skToPK
+
+  evalVRF = \_ msg (SignKeyPraosVRF sk) -> do
+    let msgBS = serialize' msg
+    proof <- maybe (error "Invalid Key") pure $ prove sk msgBS
+    output <- maybe (error "Invalid Proof") pure $ verify (skToPK sk) proof msgBS
+    return (outputBytes output, CertPraosVRF proof)
+
+  verifyVRF = \_ (VerKeyPraosVRF pk) msg (_, CertPraosVRF proof) ->
+    isJust $ verify pk proof (serialize' msg)
+
+  -- TODO: verify that the below sizes are correct
+  maxVRF _ = 2 ^ (8 * crypto_vrf_proofbytes) - 1
+  seedSizeVRF _ = fromIntegral crypto_vrf_seedbytes
+
+  genKeyPairVRF = \cryptoseed ->
+    let seed = seedFromBytes . fst . getBytesFromSeedT (fromIntegral crypto_vrf_seedbytes) $ cryptoseed
+        (pk, sk) = keypairFromSeed seed
+    in (SignKeyPraosVRF sk, VerKeyPraosVRF pk)
+
+  encodeVerKeyVRF = toCBOR
+  encodeSignKeyVRF = toCBOR
+  encodeCertVRF = toCBOR
+  decodeVerKeyVRF = fromCBOR
+  decodeCertVRF = fromCBOR
+  decodeSignKeyVRF = fromCBOR
 
 {-
 instance VRFAlgorithm SimpleVRF where

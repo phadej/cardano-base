@@ -69,7 +69,7 @@ tests =
               Nothing ->
                 assertBool "Verification failure" False
               Just output -> do
-                hash <- outputToByteString output
+                let hash = outputBytes output
                 print hash
                 assertEqual "Hash length" 64 (BS.length hash)
                 pure ()
