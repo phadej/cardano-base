@@ -13,7 +13,6 @@ module Cardano.Crypto.VRF.Mock
 where
 
 import Data.Word (Word64)
-import Numeric.Natural (Natural)
 import Data.Proxy (Proxy (..))
 import GHC.Generics (Generic)
 
@@ -24,7 +23,6 @@ import Cardano.Crypto.Hash
 import Cardano.Crypto.Util
 import Cardano.Crypto.Seed
 import Cardano.Crypto.VRF.Class
-import Data.Proxy (Proxy (..))
 
 data MockVRF
 

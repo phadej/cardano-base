@@ -171,6 +171,9 @@ class ( Typeable v
       , rawDeserialiseVerKeyVRF
       , rawDeserialiseSignKeyVRF
       , rawDeserialiseCertVRF
+      , sizeVerKeyVRF
+      , sizeSignKeyVRF
+      , sizeCertVRF
     #-}
 
 

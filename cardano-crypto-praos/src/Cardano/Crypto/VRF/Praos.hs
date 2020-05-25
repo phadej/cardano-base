@@ -426,6 +426,10 @@ instance VRFAlgorithm PraosVRF where
   rawDeserialiseSignKeyVRF = fmap (SignKeyPraosVRF . skFromBytes) . assertLength signKeySizeVRF
   rawDeserialiseCertVRF = fmap (CertPraosVRF . proofFromBytes) . assertLength certSizeVRF
 
+  sizeVerKeyVRF _ = fromIntegral verKeySizeVRF
+  sizeSignKeyVRF _ = fromIntegral signKeySizeVRF
+  sizeCertVRF _ = fromIntegral certSizeVRF
+
 assertLength :: Int -> ByteString -> Maybe ByteString
 assertLength l bs
   | BS.length bs == l
