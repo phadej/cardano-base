@@ -9,6 +9,8 @@ module Test.Crypto.VRF.Praos
 where
 
 import Cardano.Crypto.VRF.Praos
+import Cardano.Crypto.VRF.Class
+import Cardano.Crypto.Seed
 
 -- import Cardano.Binary (FromCBOR, ToCBOR (..))
 -- import Cardano.Crypto.VRF
@@ -73,4 +75,17 @@ tests =
                 print hash
                 assertEqual "Hash length" 64 (BS.length hash)
                 pure ()
+    , testCase "VRF keygen" $ do
+        seed <- readSeedFromSystemEntropy 32
+        let (SignKeyPraosVRF sk, VerKeyPraosVRF pk) = genKeyPairVRF @PraosVRF seed
+        
+        assertEqual "SK bytes" (BS.length $ skBytes sk) (fromIntegral crypto_vrf_secretkeybytes)
+        assertEqual "PK bytes" (BS.length $ pkBytes pk) (fromIntegral crypto_vrf_publickeybytes)
+    , testCase "VRF eval and verify" $ do
+        seed <- readSeedFromSystemEntropy 32
+        let (sk, pk) = genKeyPairVRF @PraosVRF seed
+        let message = "Hello, world! How are you doing?" :: BS.ByteString
+        (output, proof) <- evalVRF () message sk
+        assertBool "Verified" $
+          verifyVRF () pk message (output, proof)
     ]
