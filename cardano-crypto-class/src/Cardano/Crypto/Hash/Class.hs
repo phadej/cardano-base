@@ -7,6 +7,7 @@ module Cardano.Crypto.Hash.Class
   ( HashAlgorithm (..)
   , ByteString
   , Hash(..)
+  , castHash
   , hash
   , hashRaw
   , hashPair
@@ -23,6 +24,7 @@ import Cardano.Binary
   ( Encoding
   , FromCBOR (..)
   , ToCBOR (..)
+  , Size
   , decodeBytes
   , serializeEncoding'
   )
@@ -47,9 +49,15 @@ class Typeable h => HashAlgorithm h where
 
   hashAlgorithmName :: proxy h -> String
 
+  -- | The size in bytes of the output of 'digest'
+  sizeHash :: proxy h -> Word
+
   byteCount :: proxy h -> Natural
+  byteCount = fromIntegral . sizeHash
 
   digest :: HasCallStack => proxy h -> ByteString -> ByteString
+
+{-# DEPRECATED byteCount "Use sizeHash" #-}
 
 newtype Hash h a = UnsafeHash {getHash :: ByteString}
   deriving (Eq, Ord, Generic, NFData, NoUnexpectedThunks)
@@ -64,6 +72,18 @@ instance IsString (Hash h a) where
 instance (HashAlgorithm h, Typeable a) => ToCBOR (Hash h a) where
   toCBOR = toCBOR . getHash
 
+  -- | 'Size' expression for @Hash h a@, which is expressed using the 'ToCBOR'
+  -- instance for 'ByteString' (as is the above 'toCBOR' method).  'Size'
+  -- computation of length of the bytestring is passed as the first argument to
+  -- 'encodedSizeExpr'.  The 'ByteString' instance will use it to calculate
+  -- @'size' ('Proxy' @('LengthOf' 'ByteString'))@.
+  --
+  encodedSizeExpr _size proxy =
+      encodedSizeExpr (\_ -> hashSize) (getHash <$> proxy)
+    where
+      hashSize :: Size
+      hashSize = fromIntegral (sizeHash (Proxy :: Proxy h))
+
 instance (HashAlgorithm h, Typeable a) => FromCBOR (Hash h a) where
   fromCBOR = do
     bs <- decodeBytes
@@ -73,6 +93,9 @@ instance (HashAlgorithm h, Typeable a) => FromCBOR (Hash h a) where
     if la == le
     then return $ UnsafeHash bs
     else fail $ "expected " ++ show le ++ " byte(s), but got " ++ show la
+
+castHash :: Hash h a -> Hash h b
+castHash (UnsafeHash h) = UnsafeHash h
 
 hash :: forall h a. (HashAlgorithm h, ToCBOR a) => a -> Hash h a
 hash = hashWithSerialiser toCBOR

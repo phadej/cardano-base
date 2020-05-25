@@ -1,6 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Test.Crypto.Hash
   ( tests
   )
@@ -11,7 +13,7 @@ import Cardano.Crypto.Hash
 import qualified Data.ByteString as SB
 import Data.Proxy (Proxy (..))
 import Data.String (IsString (..))
-import Test.Crypto.Util (prop_cbor)
+import Test.Crypto.Util (prop_cbor, prop_cbor_size)
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -35,20 +37,24 @@ testHashAlgorithm
   -> TestTree
 testHashAlgorithm _ n =
   testGroup n
-    [ testProperty "byte count" $ prop_hash_correct_byteCount @h @[Int]
+    [ testProperty "hash size" $ prop_hash_correct_sizeHash @h @[Int]
     , testProperty "serialise" $ prop_hash_cbor @h
+    , testProperty "ToCBOR size" $ prop_hash_cbor_size @h
     , testProperty "show/fromString" $ prop_hash_show_fromString @h @Float
     ]
 
 prop_hash_cbor :: HashAlgorithm h => Hash h Int -> Property
 prop_hash_cbor = prop_cbor
 
-prop_hash_correct_byteCount
+prop_hash_cbor_size :: HashAlgorithm h => Hash h Int -> Property
+prop_hash_cbor_size = prop_cbor_size
+
+prop_hash_correct_sizeHash
   :: forall h a. HashAlgorithm h
   => Hash h a
   -> Property
-prop_hash_correct_byteCount h =
-  (SB.length $ getHash h) === (fromIntegral $ byteCount (Proxy :: Proxy h))
+prop_hash_correct_sizeHash h =
+  SB.length (getHash h) === fromIntegral (sizeHash (Proxy :: Proxy h))
 
 prop_hash_show_fromString :: Hash h a -> Property
 prop_hash_show_fromString h = h === fromString (show h)

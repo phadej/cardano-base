@@ -1,16 +1,20 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Crypto.Util
   ( -- * CBOR
     FromCBOR (..)
   , ToCBOR (..)
   , prop_cbor
+  , prop_cbor_size
   , prop_cbor_with
   , prop_cbor_valid
   , prop_cbor_roundtrip
   , prop_raw_serialise
+  , prop_size_serialise
   , prop_cbor_direct_vs_class
 
     -- * Test Seed
@@ -21,19 +25,15 @@ module Test.Crypto.Util
 
     -- * Seeds
   , arbitrarySeedOfSize
-
-  , -- * Natural Numbers
-    genNat
-  , genNatBetween
-  , shrinkNat
   )
 where
 
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..),
-                       Encoding, Decoder,
-                       decodeFullDecoder, serializeEncoding)
+                       Encoding, Decoder, Range (..),
+                       decodeFullDecoder, serializeEncoding, szGreedy, szSimplify)
 import Codec.CBOR.FlatTerm
+import Codec.CBOR.Write
 import Cardano.Crypto.Seed (Seed, mkSeedFromBytes)
 import Crypto.Random
   ( ChaChaDRG
@@ -41,7 +41,8 @@ import Crypto.Random
   , drgNewTest
   , withDRG
   )
-import Data.ByteString as BS (ByteString, pack)
+import Data.ByteString as BS (ByteString, pack, length)
+import Data.Proxy (Proxy (..))
 import Data.Word (Word64)
 import Numeric.Natural (Natural)
 import Test.QuickCheck
@@ -49,11 +50,9 @@ import Test.QuickCheck
   , (===)
   , Arbitrary
   , Gen
-  , NonNegative (..)
   , Property
   , arbitrary
   , arbitraryBoundedIntegral
-  , choose
   , counterexample
   , property
   , shrink
@@ -81,12 +80,7 @@ nullTestSeed = TestSeed (0, 0, 0, 0, 0)
 
 instance Arbitrary TestSeed where
   arbitrary =
-    (\w1 w2 w3 w4 w5 -> TestSeed (w1, w2, w3, w4, w5)) <$>
-      gen <*>
-      gen <*>
-      gen <*>
-      gen <*>
-      gen
+      TestSeed <$> ((,,,,) <$> gen <*> gen <*> gen <*> gen <*> gen)
     where
       gen :: Gen Word64
       gen = arbitraryBoundedIntegral
@@ -96,7 +90,7 @@ instance Arbitrary TestSeed where
 -- Seeds
 --------------------------------------------------------------------------------
 
-arbitrarySeedOfSize :: Natural -> Gen Seed
+arbitrarySeedOfSize :: Word -> Gen Seed
 arbitrarySeedOfSize sz =
   (mkSeedFromBytes . BS.pack) <$> vector (fromIntegral sz)
 
@@ -107,6 +101,14 @@ arbitrarySeedOfSize sz =
 prop_cbor :: (ToCBOR a, FromCBOR a, Eq a, Show a)
           => a -> Property
 prop_cbor = prop_cbor_with toCBOR fromCBOR
+
+prop_cbor_size :: forall a. ToCBOR a => a -> Property
+prop_cbor_size a = counterexample (show lo ++ " ≰ " ++ show len) (lo <= len)
+              .&&. counterexample (show len ++ " ≰ " ++ show hi) (len <= hi)
+  where
+    len, lo, hi :: Natural
+    len = fromIntegral $ BS.length (toStrictByteString (toCBOR a))
+    Right (Range {lo, hi}) = szSimplify $ encodedSizeExpr szGreedy (Proxy :: Proxy a)
 
 
 prop_cbor_with :: (Eq a, Show a)
@@ -160,18 +162,6 @@ prop_cbor_direct_vs_class encoder x =
   toFlatTerm (encoder x) === toFlatTerm (toCBOR x)
 
 
---------------------------------------------------------------------------------
--- Natural numbers
---------------------------------------------------------------------------------
-genNatBetween :: Natural -> Natural -> Gen Natural
-genNatBetween from to = do
-  i <- choose (toInteger from, toInteger to)
-  return $ fromIntegral i
-
-genNat :: Gen Natural
-genNat = do
-  NonNegative i <- arbitrary :: Gen (NonNegative Integer)
-  return $ fromIntegral i
-
-shrinkNat :: Natural -> [Natural]
-shrinkNat = map fromIntegral . shrink . toInteger
+prop_size_serialise :: (a -> ByteString) -> Word -> a -> Property
+prop_size_serialise serialise size x =
+    BS.length (serialise x) === fromIntegral size
