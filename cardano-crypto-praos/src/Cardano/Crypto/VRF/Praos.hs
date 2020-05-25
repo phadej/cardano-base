@@ -159,6 +159,17 @@ foreign import ccall "crypto_vrf_verify" crypto_vrf_verify :: OutputPtr -> PKPtr
 
 foreign import ccall "randombytes_buf" randombytes_buf :: Ptr a -> CSize -> IO ()
 
+-- Key size constants
+
+certSizeVRF :: Int
+certSizeVRF = fromIntegral crypto_vrf_proofbytes
+
+signKeySizeVRF :: Int
+signKeySizeVRF = fromIntegral crypto_vrf_secretkeybytes
+
+verKeySizeVRF :: Int
+verKeySizeVRF = fromIntegral crypto_vrf_publickeybytes
+
 -- | Allocate a 'Seed' and attach a finalizer. The allocated memory will not be initialized.
 mkSeed :: IO Seed
 mkSeed = do
@@ -199,17 +210,17 @@ outputBytes (Output op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
 -- | Convert a proof into a 'ByteString' that we can inspect.
 proofBytes :: Proof -> ByteString
 proofBytes (Proof op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
-  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_proofbytes)
+  BS.packCStringLen (castPtr ptr, certSizeVRF)
 
 -- | Convert a public key into a 'ByteString' that we can inspect.
 pkBytes :: PK -> ByteString
 pkBytes (PK op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
-  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_publickeybytes)
+  BS.packCStringLen (castPtr ptr, verKeySizeVRF)
 
 -- | Convert a public key into a 'ByteString' that we can inspect.
 skBytes :: SK -> ByteString
 skBytes (SK op) = unsafePerformIO $ withForeignPtr op $ \ptr ->
-  BS.packCStringLen (castPtr ptr, fromIntegral crypto_vrf_secretkeybytes)
+  BS.packCStringLen (castPtr ptr, signKeySizeVRF)
 
 instance Show Proof where
   show = show . proofBytes
@@ -252,52 +263,52 @@ instance FromCBOR PK where
 -- | Allocate a Public Key and attach a finalizer. The allocated memory will
 -- not be initialized.
 mkPK :: IO PK
-mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_publickeybytes)
+mkPK = fmap PK $ newForeignPtr finalizerFree =<< mallocBytes verKeySizeVRF
 
 -- | Allocate a Secret Key and attach a finalizer. The allocated memory will
 -- not be initialized.
 mkSK :: IO SK
-mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_secretkeybytes)
+mkSK = fmap SK $ newForeignPtr finalizerFree =<< mallocBytes signKeySizeVRF
 
 -- | Allocate a Proof and attach a finalizer. The allocated memory will
 -- not be initialized.
 mkProof :: IO Proof
-mkProof = fmap Proof $ newForeignPtr finalizerFree =<< mallocBytes (fromIntegral crypto_vrf_proofbytes)
+mkProof = fmap Proof $ newForeignPtr finalizerFree =<< mallocBytes (certSizeVRF)
 
 proofFromBytes :: ByteString -> Proof
 proofFromBytes bs
-  | BS.length bs /= fromIntegral crypto_vrf_proofbytes
+  | BS.length bs /= certSizeVRF
   = error "Invalid proof length"
   | otherwise
   = unsafePerformIO $ do
       proof <- mkProof
       withForeignPtr (unProof proof) $ \ptr ->
         BS.useAsCString bs $ \cstr -> do
-          copyBytes cstr (castPtr ptr) (fromIntegral crypto_vrf_proofbytes)
+          copyBytes cstr (castPtr ptr) (certSizeVRF)
       return proof
 
 skFromBytes :: ByteString -> SK
 skFromBytes bs
-  | BS.length bs /= fromIntegral crypto_vrf_secretkeybytes
+  | BS.length bs /= signKeySizeVRF
   = error "Invalid sk length"
   | otherwise
   = unsafePerformIO $ do
       sk <- mkSK
       withForeignPtr (unSK sk) $ \ptr ->
         BS.useAsCString bs $ \cstr -> do
-          copyBytes cstr (castPtr ptr) (fromIntegral crypto_vrf_secretkeybytes)
+          copyBytes cstr (castPtr ptr) signKeySizeVRF
       return sk
 
 pkFromBytes :: ByteString -> PK
 pkFromBytes bs
-  | BS.length bs /= fromIntegral crypto_vrf_publickeybytes
+  | BS.length bs /= verKeySizeVRF
   = error "Invalid pk length"
   | otherwise
   = unsafePerformIO $ do
       pk <- mkPK
       withForeignPtr (unPK pk) $ \ptr ->
         BS.useAsCString bs $ \cstr -> do
-          copyBytes cstr (castPtr ptr) (fromIntegral crypto_vrf_publickeybytes)
+          copyBytes cstr (castPtr ptr) verKeySizeVRF
       return pk
 
 -- | Allocate an Output and attach a finalizer. The allocated memory will
@@ -408,9 +419,16 @@ instance VRFAlgorithm PraosVRF where
         (pk, sk) = keypairFromSeed seed
     in (SignKeyPraosVRF sk, VerKeyPraosVRF pk)
 
-  encodeVerKeyVRF = toCBOR
-  encodeSignKeyVRF = toCBOR
-  encodeCertVRF = toCBOR
-  decodeVerKeyVRF = fromCBOR
-  decodeCertVRF = fromCBOR
-  decodeSignKeyVRF = fromCBOR
+  rawSerialiseVerKeyVRF (VerKeyPraosVRF pk) = pkBytes pk
+  rawSerialiseSignKeyVRF (SignKeyPraosVRF sk) = skBytes sk
+  rawSerialiseCertVRF (CertPraosVRF proof) = proofBytes proof
+  rawDeserialiseVerKeyVRF = fmap (VerKeyPraosVRF . pkFromBytes) . assertLength verKeySizeVRF
+  rawDeserialiseSignKeyVRF = fmap (SignKeyPraosVRF . skFromBytes) . assertLength signKeySizeVRF
+  rawDeserialiseCertVRF = fmap (CertPraosVRF . proofFromBytes) . assertLength certSizeVRF
+
+assertLength :: Int -> ByteString -> Maybe ByteString
+assertLength l bs
+  | BS.length bs == l
+  = Just bs
+  | otherwise
+  = Nothing

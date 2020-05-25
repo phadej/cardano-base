@@ -157,6 +157,22 @@ class ( Typeable v
   rawDeserialiseSignKeyVRF :: ByteString -> Maybe (SignKeyVRF v)
   rawDeserialiseCertVRF    :: ByteString -> Maybe (CertVRF    v)
 
+  {-# MINIMAL
+        algorithmNameVRF
+      , deriveVerKeyVRF
+      , evalVRF
+      , verifyVRF
+      , maxVRF
+      , seedSizeVRF
+      , (genKeyVRF                | genKeyPairVRF)
+      , rawSerialiseVerKeyVRF
+      , rawSerialiseSignKeyVRF
+      , rawSerialiseCertVRF
+      , rawDeserialiseVerKeyVRF
+      , rawDeserialiseSignKeyVRF
+      , rawDeserialiseCertVRF
+    #-}
+
 
 --
 -- Convenient CBOR encoding/decoding
@@ -215,22 +231,6 @@ decodeCertVRF = do
           expected = fromIntegral (sizeCertVRF (Proxy :: Proxy v))
           actual   = BS.length bs
 
-  {-# MINIMAL
-        algorithmNameVRF
-      , deriveVerKeyVRF
-      , evalVRF
-      , verifyVRF
-      , maxVRF
-      , seedSizeVRF
-      , (genKeyVRF                | genKeyPairVRF)
-      , (rawSerialiseVerKeyVRF    | encodeVerKeyVRF)
-      , (rawSerialiseSignKeyVRF   | encodeSignKeyVRF)
-      , (rawSerialiseCertVRF      | encodeCertVRF)
-      , (rawDeserialiseVerKeyVRF  | decodeVerKeyVRF)
-      , (rawDeserialiseSignKeyVRF | decodeSignKeyVRF)
-      , (rawDeserialiseCertVRF    | decodeCertVRF)
-    #-}
-
 data CertifiedVRF v a
   = CertifiedVRF
       { certifiedNatural :: ByteString
@@ -255,7 +255,7 @@ instance (VRFAlgorithm v, Typeable a) => ToCBOR (CertifiedVRF v a) where
       + certifiedNaturalSize (certifiedNatural <$> proxy)
       + fromIntegral (sizeCertVRF (Proxy :: Proxy v))
     where
-      certifiedNaturalSize :: Proxy Natural -> Size
+      certifiedNaturalSize :: Proxy ByteString -> Size
       certifiedNaturalSize _proxy =
         fromIntegral $ (withWordSize :: Natural -> Integer) (maxVRF (Proxy :: Proxy v))
 
