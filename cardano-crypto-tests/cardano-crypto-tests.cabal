@@ -37,6 +37,7 @@ test-suite test-crypto
                      , cardano-crypto-praos
                      , cborg
                      , cryptonite
+                     , formatting
                      , QuickCheck
                      , tasty
                      , tasty-quickcheck

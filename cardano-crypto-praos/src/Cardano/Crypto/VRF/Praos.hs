@@ -93,6 +93,7 @@ import Control.Monad (void)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Maybe (isJust)
+import Data.Proxy (Proxy (..))
 
 -- Value types.
 --
@@ -239,6 +240,8 @@ instance Eq Proof where
 
 instance ToCBOR Proof where
   toCBOR = toCBOR . proofBytes
+  encodedSizeExpr _ _ =
+    encodedSizeExpr (\_ -> fromIntegral certSizeVRF) (Proxy :: Proxy ByteString)
 
 instance FromCBOR Proof where
   fromCBOR = proofFromBytes <$> fromCBOR
@@ -252,6 +255,8 @@ instance Eq SK where
 
 instance ToCBOR SK where
   toCBOR = toCBOR . skBytes
+  encodedSizeExpr _ _ =
+    encodedSizeExpr (\_ -> fromIntegral signKeySizeVRF) (Proxy :: Proxy ByteString)
 
 instance FromCBOR SK where
   fromCBOR = skFromBytes <$> fromCBOR
@@ -265,6 +270,8 @@ instance Eq PK where
 
 instance ToCBOR PK where
   toCBOR = toCBOR . pkBytes
+  encodedSizeExpr _ _ =
+    encodedSizeExpr (\_ -> fromIntegral verKeySizeVRF) (Proxy :: Proxy ByteString)
 
 instance FromCBOR PK where
   fromCBOR = pkFromBytes <$> fromCBOR
