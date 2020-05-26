@@ -13,6 +13,7 @@ where
 
 import Cardano.Binary (FromCBOR, ToCBOR (..))
 import Cardano.Crypto.VRF
+import Cardano.Crypto.VRF.Praos
 import Data.Proxy (Proxy (..))
 import Test.Crypto.Util
 import Test.QuickCheck ((==>), Arbitrary(..), Gen, Property {-, counterexample -})
@@ -27,6 +28,7 @@ tests =
   testGroup "Crypto.VRF"
     [ testVRFAlgorithm (Proxy :: Proxy MockVRF) "MockVRF"
     , testVRFAlgorithm (Proxy :: Proxy SimpleVRF) "SimpleVRF"
+    , testVRFAlgorithm (Proxy :: Proxy PraosVRF) "PraosVRF"
     ]
 
 testVRFAlgorithm

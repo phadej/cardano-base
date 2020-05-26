@@ -1,14 +1,14 @@
-name:                cardano-crypto-praos
+name:                cardano-crypto-tests
 version:             2.0.0
-synopsis:            Crypto primitives from libsodium
-description:         VRF (and KES, tba) primitives from libsodium.
+synopsis:            Tests for cardano-crypto-class and -praos
+description:         Tests for cardano-crypto-class and -praos
 license:             Apache-2.0
-license-files:        
+license-files:
   LICENSE
   NOTICE
 author:              IOHK
 maintainer:          operations@iohk.io
-copyright:           2019 IOHK
+copyright:           2020 IOHK
 category:            Currency
 build-type:          Simple
 extra-source-files:  README.md
@@ -19,32 +19,37 @@ flag development
     default: False
     manual: True
 
-library
-  hs-source-dirs:      src
-  exposed-modules:     Cardano.Crypto.VRF.Praos
+test-suite test-crypto
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Main.hs
+  other-modules:
+                       Test.Crypto.DSIGN
+                       Test.Crypto.Hash
+                       Test.Crypto.KES
+                       Test.Crypto.Util
+                       Test.Crypto.VRF
 
   build-depends:       base
-                     , base16-bytestring
                      , bytestring
                      , cardano-binary
-                     , cardano-prelude
                      , cardano-crypto-class
+                     , cardano-crypto-praos
+                     , cborg
                      , cryptonite
-                     , deepseq
-                     , memory
-                     , reflection
-                     , vector
+                     , QuickCheck
+                     , tasty
+                     , tasty-quickcheck
 
   default-language:    Haskell2010
 
   ghc-options:         -Weverything
+                       -Wno-incomplete-uni-patterns
                        -fno-warn-all-missed-specialisations
                        -fno-warn-implicit-prelude
                        -fno-warn-missing-import-lists
                        -fno-warn-safe
                        -fno-warn-unsafe
-  
-  pkgconfig-depends: libsodium
 
   if (!flag(development))
     ghc-options:         -Werror

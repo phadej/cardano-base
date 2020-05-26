@@ -41,6 +41,12 @@ module Cardano.Crypto.VRF.Praos
   , Output
 
 
+  -- * Key sizes
+  , certSizeVRF
+  , signKeySizeVRF
+  , verKeySizeVRF
+  , vrfKeySizeVRF
+
   -- * Seed and key generation
   , genSeed
   , keypairFromSeed
@@ -170,6 +176,9 @@ signKeySizeVRF = fromIntegral crypto_vrf_secretkeybytes
 verKeySizeVRF :: Int
 verKeySizeVRF = fromIntegral crypto_vrf_publickeybytes
 
+vrfKeySizeVRF :: Int
+vrfKeySizeVRF = fromIntegral crypto_vrf_outputbytes
+
 -- | Allocate a 'Seed' and attach a finalizer. The allocated memory will not be initialized.
 mkSeed :: IO Seed
 mkSeed = do
@@ -284,7 +293,7 @@ proofFromBytes bs
       proof <- mkProof
       withForeignPtr (unProof proof) $ \ptr ->
         BS.useAsCString bs $ \cstr -> do
-          copyBytes cstr (castPtr ptr) (certSizeVRF)
+          copyBytes (castPtr ptr) cstr (certSizeVRF)
       return proof
 
 skFromBytes :: ByteString -> SK
@@ -296,7 +305,7 @@ skFromBytes bs
       sk <- mkSK
       withForeignPtr (unSK sk) $ \ptr ->
         BS.useAsCString bs $ \cstr -> do
-          copyBytes cstr (castPtr ptr) signKeySizeVRF
+          copyBytes (castPtr ptr) cstr signKeySizeVRF
       return sk
 
 pkFromBytes :: ByteString -> PK
@@ -308,7 +317,7 @@ pkFromBytes bs
       pk <- mkPK
       withForeignPtr (unPK pk) $ \ptr ->
         BS.useAsCString bs $ \cstr -> do
-          copyBytes cstr (castPtr ptr) verKeySizeVRF
+          copyBytes (castPtr ptr) cstr verKeySizeVRF
       return pk
 
 -- | Allocate an Output and attach a finalizer. The allocated memory will
