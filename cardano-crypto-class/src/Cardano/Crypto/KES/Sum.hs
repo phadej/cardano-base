@@ -49,7 +49,7 @@ import           Control.Monad (guard)
 import           Cardano.Prelude (NoUnexpectedThunks)
 import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 
-import           Cardano.Crypto.Seed
+import           Cardano.Crypto.Seed2
 import           Cardano.Crypto.Hash.Class
 import           Cardano.Crypto.KES.Class
 import           Cardano.Crypto.KES.Single (SingleKES)

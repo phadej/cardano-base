@@ -49,6 +49,7 @@ library
                        Cardano.Crypto.KES.Sum
 
                        Cardano.Crypto.Seed
+                       Cardano.Crypto.Seed2
                        Cardano.Crypto.Util
 
                        Cardano.Crypto.VRF.Class

@@ -32,7 +32,7 @@ import           Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import           Cardano.Crypto.DSIGN
 import qualified Cardano.Crypto.DSIGN as DSIGN
 import           Cardano.Crypto.KES.Class
-import           Cardano.Crypto.Seed
+import           Cardano.Crypto.Seed2
 import           Cardano.Crypto.Util
 
 
@@ -108,7 +108,7 @@ instance (DSIGNAlgorithm d, Typeable d, KnownNat t) =>
             seeds    = take duration
                      . map mkSeedFromBytes
                      $ unfoldr (getBytesFromSeed seedSize) seed
-            sks      = map genKeyDSIGN seeds
+            sks      = map (genKeyDSIGN . toSeed1) seeds
          in SignKeySimpleKES (Vec.fromList sks)
 
 

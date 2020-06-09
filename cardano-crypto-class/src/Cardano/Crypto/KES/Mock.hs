@@ -28,7 +28,7 @@ import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Prelude (NoUnexpectedThunks)
 
 import Cardano.Crypto.Hash
-import Cardano.Crypto.Seed
+import Cardano.Crypto.Seed2
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Util
 

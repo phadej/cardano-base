@@ -47,7 +47,7 @@ import GHC.Stack
 import Cardano.Prelude (NoUnexpectedThunks)
 import Cardano.Binary (Decoder, decodeBytes, Encoding, encodeBytes, Size, withWordSize)
 
-import Cardano.Crypto.Seed
+import Cardano.Crypto.Seed2
 import Cardano.Crypto.Util (Empty)
 import Cardano.Crypto.Hash.Class (HashAlgorithm, Hash, hashRaw)
 

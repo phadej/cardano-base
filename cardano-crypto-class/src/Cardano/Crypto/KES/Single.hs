@@ -47,7 +47,7 @@ import Cardano.Crypto.Hash.Class
 import Cardano.Crypto.DSIGN.Class
 import qualified Cardano.Crypto.DSIGN as DSIGN
 import Cardano.Crypto.KES.Class
-
+import Cardano.Crypto.Seed2 (toSeed1)
 
 -- | A standard signature scheme is a forward-secure signature scheme with a
 -- single time period.
@@ -108,7 +108,7 @@ instance (DSIGNAlgorithm d, Typeable d) => KESAlgorithm (SingleKES d) where
     --
 
     seedSizeKES _ = seedSizeDSIGN (Proxy :: Proxy d)
-    genKeyKES seed = SignKeySingleKES (genKeyDSIGN seed)
+    genKeyKES seed = SignKeySingleKES (genKeyDSIGN (toSeed1 seed))
 
 
     --
